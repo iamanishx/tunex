@@ -1,0 +1,49 @@
+# Python Cache Files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Model & Training Artifacts (checkpoints and final adapter output)
+qwen_hindi_lora/
+qwen_hindi_lora_final/
+
+# Performance Profile Traces
+traces/
+
+# Environment / Dependency Directories
+.env
+.venv/
+env/
+venv/
+ENV/
+bin/
+lib/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE and Editor Files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+
+# OS Files
+Thumbs.db
+db.db
+Desktop.ini
