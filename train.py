@@ -39,7 +39,8 @@ class PyTorchProfilerCallback(TrainerCallback):
             on_trace_ready=torch.profiler.tensorboard_trace_handler(self.trace_dir),
             record_shapes=True,
             profile_memory=True,
-            with_stack=True
+            with_stack=True,
+            acc_events=True
         )
         self.prof.start()
 
@@ -80,7 +81,7 @@ def main():
     model_kwargs = {
         "device_map": "auto",
         "trust_remote_code": True,
-        "torch_dtype": compute_dtype,
+        "dtype": compute_dtype,
     }
     
     if args.use_qlora:
@@ -125,7 +126,7 @@ def main():
 
     dataset_list = []
     if hinglish_dataset:
-        formatted_hinglish = hinglish_dataset.map(format_alpaca_to_chat, remove_columns=hinglish_dataset.column_names)
+        formatted_hinglish = hinglish_dataset.select_columns(["messages"])
         dataset_list.append(formatted_hinglish)
     if english_dataset:
         formatted_english = english_dataset.map(format_alpaca_to_chat, remove_columns=english_dataset.column_names)
@@ -169,12 +170,12 @@ def main():
         gradient_checkpointing=True,
         learning_rate=2e-5,
         lr_scheduler_type="cosine",
-        warmup_ratio=0.03,
+        warmup_steps=10,
         logging_steps=1,
         save_strategy="no",
         fp16=not torch.cuda.is_bf16_supported(),
         bf16=torch.cuda.is_bf16_supported(),
-        max_seq_length=512,
+        max_length=512,
         eos_token="<|im_end|>",
         report_to="none"
     )
