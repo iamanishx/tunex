@@ -6,60 +6,12 @@ from peft import LoraConfig, get_peft_model, TaskType
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    TrainingArguments,
-    TrainerCallback,
 )
 from trl import SFTTrainer, SFTConfig
-
-class PyTorchProfilerCallback(TrainerCallback):
-    def __init__(self, warmup_steps, active_steps, trace_dir):
-        self.warmup_steps = warmup_steps
-        self.active_steps = active_steps
-        self.trace_dir = trace_dir
-        self.prof = None
-
-    def on_train_begin(self, args, state, control, **kwargs):
-        print(f"--> Starting PyTorch Profiler (warmup={self.warmup_steps}, active={self.active_steps})...")
-        os.makedirs(self.trace_dir, exist_ok=True)
-        
-        import torch.profiler
-        schedule = torch.profiler.schedule(
-            wait=1,
-            warmup=self.warmup_steps,
-            active=self.active_steps,
-            repeat=1
-        )
-        
-        self.prof = torch.profiler.profile(
-            activities=[
-                torch.profiler.ProfilerActivity.CPU,
-                torch.profiler.ProfilerActivity.CUDA,
-            ],
-            schedule=schedule,
-            on_trace_ready=torch.profiler.tensorboard_trace_handler(self.trace_dir),
-            record_shapes=True,
-            profile_memory=True,
-            with_stack=True,
-            acc_events=True
-        )
-        self.prof.start()
-
-    def on_step_end(self, args, state, control, **kwargs):
-        if self.prof:
-            self.prof.step()
-
-    def on_train_end(self, args, state, control, **kwargs):
-        if self.prof:
-            print(f"--> Stopping PyTorch Profiler. Saving trace to {self.trace_dir}...")
-            self.prof.stop()
-            self.prof = None
 
 def parse_arguments():
     p = argparse.ArgumentParser()
     p.add_argument("--model", type=str, default="Qwen/Qwen2.5-0.5B")
-    p.add_argument("--warmup_steps", type=int, default=3)
-    p.add_argument("--active_steps", type=int, default=3)
-    p.add_argument("--trace_dir", default="./traces/qwen_profile")
     p.add_argument("--use_qlora", action="store_true")
     p.add_argument("--epochs", type=int, default=1)
     return p.parse_args()
@@ -102,13 +54,14 @@ def main():
     print("Loading datasets...")
     
     try:
-        hinglish_dataset = load_dataset("smangrul/hinglish_self_instruct_v0", split="train")
+        full_hinglish = load_dataset("Sujalvc/hinglish-instruct-dataset", split="train")
+        hinglish_dataset = full_hinglish.shuffle(seed=42).select(range(4000))
     except Exception as e:
-        print(f"Failed to load hinglish_self_instruct_v0 directly. Using fallbacks: {e}")
+        print(f"Failed to load hinglish-instruct-dataset directly. Using fallbacks: {e}")
         hinglish_dataset = None
 
     try:
-        english_dataset = load_dataset("yahma/alpaca-cleaned", split="train[:500]")
+        english_dataset = load_dataset("yahma/alpaca-cleaned", split="train[:1000]")
     except Exception as e:
         print(f"Failed to load alpaca-cleaned: {e}")
         english_dataset = None
@@ -126,7 +79,7 @@ def main():
 
     dataset_list = []
     if hinglish_dataset:
-        formatted_hinglish = hinglish_dataset.select_columns(["messages"])
+        formatted_hinglish = hinglish_dataset.map(format_alpaca_to_chat, remove_columns=hinglish_dataset.column_names)
         dataset_list.append(formatted_hinglish)
     if english_dataset:
         formatted_english = english_dataset.map(format_alpaca_to_chat, remove_columns=english_dataset.column_names)
@@ -185,15 +138,23 @@ def main():
         args=training_args,
         train_dataset=mixed_dataset,
         peft_config=peft_config,
-        callbacks=[PyTorchProfilerCallback(args.warmup_steps, args.active_steps, args.trace_dir)]
     )
 
     print("Starting training...")
     trainer.train()
     
     print("Saving fine-tuned adapter...")
-    trainer.save_model("./qwen_hindi_lora_final")
-    print("Fine-tuning completed successfully!")
+    save_dir = "/data/qwen_hinglish_lora" if os.path.exists("/data") else "./qwen_hindi_lora_final"
+    trainer.save_model(save_dir)
+    print(f"Model saved to {save_dir}.")
+    
+    try:
+        print("Pushing model to Hugging Face Model Hub...")
+        trainer.push_to_hub("iamanishx/qwen-hinglish-lora")
+        print("Model pushed to Hugging Face Hub successfully!")
+    except Exception as e:
+        print(f"Failed to push to Hugging Face Hub: {e}")
+        print("Ensure your HF_TOKEN is configured with write permissions in your Space.")
 
 if __name__ == "__main__":
     main()
