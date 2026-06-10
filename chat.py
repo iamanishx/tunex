@@ -9,6 +9,9 @@ def parse_arguments():
     p.add_argument("--model", type=str, default="Qwen/Qwen2.5-0.5B")
     p.add_argument("--adapter", type=str, default="/data/qwen_hinglish_lora")
     p.add_argument("--no_history", action="store_true", help="Disable conversation history (single-turn mode)")
+    p.add_argument("--temperature", type=float, default=0.7, help="Sampling temperature")
+    p.add_argument("--repetition_penalty", type=float, default=1.1, help="Repetition penalty")
+    p.add_argument("--greedy", action="store_true", help="Use greedy decoding (ignores temperature)")
     return p.parse_args()
 
 def main():
@@ -21,6 +24,8 @@ def main():
         
     print(f"Loading base model: {args.model}")
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = "<|endoftext|>"
     
     compute_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
     base_model = AutoModelForCausalLM.from_pretrained(
@@ -40,6 +45,7 @@ def main():
     print("  'exit' or 'quit' to end the session.")
     print("  'clear' to clear conversation history.")
     print("="*50 + "\n")
+    SYSTEM_PROMPT = "Tum ek helpful AI assistant ho. Tum Hinglish mein jawab dete ho, yaani Hindi ko English letters mein likhte ho. Agar user English mein puchhe toh bhi Hinglish mein jawab do."
     
     history = []
     
@@ -68,9 +74,12 @@ def main():
         else:
             history.append({"role": "user", "content": user_input})
         
+        # Prepend system prompt to messages sent to the model
+        messages_for_model = [{"role": "system", "content": SYSTEM_PROMPT}] + history
+        
         # Format the input using the model's chat template
         inputs = tokenizer.apply_chat_template(
-            history,
+            messages_for_model,
             tokenize=True,
             add_generation_prompt=True,
             return_dict=True,
@@ -84,15 +93,22 @@ def main():
             if tokenizer.eos_token_id not in eos_ids:
                 eos_ids.append(tokenizer.eos_token_id)
                 
+            gen_kwargs = {
+                "max_new_tokens": 512,
+                "repetition_penalty": args.repetition_penalty,
+                "eos_token_id": eos_ids,
+            }
+            if args.greedy:
+                gen_kwargs["do_sample"] = False
+            else:
+                gen_kwargs["do_sample"] = True
+                gen_kwargs["temperature"] = args.temperature
+                gen_kwargs["top_p"] = 0.85
+                gen_kwargs["top_k"] = 50
+
             outputs = model.generate(
                 **inputs,
-                max_new_tokens=512,
-                do_sample=True,
-                temperature=0.6,
-                top_p=0.85,
-                top_k=50,
-                repetition_penalty=1.25,
-                eos_token_id=eos_ids
+                **gen_kwargs
             )
             
         # Decode only the newly generated tokens

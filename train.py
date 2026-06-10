@@ -28,7 +28,7 @@ def main():
 
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
     if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.pad_token = "<|endoftext|>"
 
     model_kwargs = {
         "device_map": "auto",
@@ -66,12 +66,15 @@ def main():
         print(f"Failed to load alpaca-cleaned: {e}")
         english_dataset = None
 
+    SYSTEM_PROMPT = "Tum ek helpful AI assistant ho. Tum Hinglish mein jawab dete ho, yaani Hindi ko English letters mein likhte ho. Agar user English mein puchhe toh bhi Hinglish mein jawab do."
+
     def format_alpaca_to_chat(example):
         user_content = example["instruction"]
         if example.get("input") and example["input"].strip() != "" and example["input"].strip() != "<noinput>":
             user_content += f"\n\nInput:\n{example['input']}"
         return {
             "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
                 {"role": "assistant", "content": example["output"]},
             ]
@@ -123,7 +126,7 @@ def main():
         gradient_checkpointing=True,
         learning_rate=2e-5,
         lr_scheduler_type="cosine",
-        warmup_steps=10,
+        warmup_ratio=0.03,
         logging_steps=1,
         save_strategy="no",
         fp16=not torch.cuda.is_bf16_supported(),
