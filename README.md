@@ -9,8 +9,6 @@ this project provides scripts and notebooks to fine-tune qwen and llama models u
 *   `qwen/train.py`: our specific training script designed for the qwen hinglish task.
 *   `chat.py`: a cli interface to chat with the base model and your trained lora adapter.
 *   `compare.py`: a tool to test the base model and your fine-tuned model side by side on prompts.
-*   `distill.py`: a dataset cleaning and rewriting pipeline.
-*   `check_dataset.py`: a dataset validation utility.
 
 ### baseten sft best practices and hyperparameters
 
